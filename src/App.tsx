@@ -19,6 +19,8 @@ export interface SignatureElement {
   color?: string
 }
 
+const SITE_URL = import.meta.env.VITE_SITE_URL as string | undefined
+
 function App() {
   const { t, language, toggleLanguage } = useLanguage()
   const [pdfFile, setPdfFile] = useState<File | null>(null)
@@ -111,12 +113,15 @@ function App() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-8 relative">
         <div className="absolute top-4 right-4 sm:top-6 sm:right-6">{langToggle}</div>
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2">Easy-pdfSign</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2">
+          {SITE_URL ? <a href={SITE_URL} className="text-inherit no-underline hover:text-blue-600 transition-colors" style={{textDecoration:'none',color:'inherit'}}>Easy-pdfSign</a> : 'Easy-pdfSign'}
+        </h1>
         <p className="text-gray-500 mb-6 sm:mb-8 text-center text-sm sm:text-base">{t('app.subtitle')}</p>
         <PDFDropZone onFileDrop={handlePdfDrop} />
         <p className="mt-6 sm:mt-8 text-xs text-gray-400 flex items-center gap-1.5 text-center">
           <span>&#x1F512;</span> {t('app.security')}
         </p>
+        {SITE_URL && <p className="mt-2 text-xs"><a href={SITE_URL} className="text-gray-400 hover:text-blue-500 transition-colors" style={{textDecoration:'none'}}>graphicscomputing.fr</a></p>}
       </div>
     )
   }
@@ -137,7 +142,9 @@ function App() {
       {/* Header — wraps on small screens */}
       <header className="bg-white border-b border-gray-200 px-3 sm:px-6 py-2 sm:py-3 flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
         <div className="flex items-center gap-2 sm:gap-4 mr-auto">
-          <h1 className="text-lg sm:text-xl font-bold text-gray-800 whitespace-nowrap">Easy-pdfSign</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-800 whitespace-nowrap">
+            {SITE_URL ? <a href={SITE_URL} style={{textDecoration:'none',color:'inherit'}}>Easy-pdfSign</a> : 'Easy-pdfSign'}
+          </h1>
           <span className="text-sm text-gray-400 truncate max-w-32 sm:max-w-64 hidden sm:inline">{pdfFile?.name}</span>
           <button
             onClick={handleReset}
