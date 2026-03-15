@@ -116,12 +116,13 @@ function App() {
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2">
           {SITE_URL ? <a href={SITE_URL} className="text-inherit no-underline hover:text-blue-600 transition-colors" style={{textDecoration:'none',color:'inherit'}}>Easy-pdfSign</a> : 'Easy-pdfSign'}
         </h1>
-        <p className="text-gray-500 mb-6 sm:mb-8 text-center text-sm sm:text-base">{t('app.subtitle')}</p>
+        <p className="text-gray-500 mb-3 text-center text-sm sm:text-base">{t('app.subtitle')}</p>
+        {SITE_URL && <p className="mb-6 sm:mb-8 text-xs text-center"><a href={SITE_URL} className="text-gray-500 hover:text-blue-600 hover:border-blue-400 transition-colors border border-gray-300 rounded-full px-4 py-1.5" style={{textDecoration:'none'}}>graphicscomputing.fr</a></p>}
+        {!SITE_URL && <div className="mb-3 sm:mb-5" />}
         <PDFDropZone onFileDrop={handlePdfDrop} />
         <p className="mt-6 sm:mt-8 text-xs text-gray-400 flex items-center gap-1.5 text-center">
           <span>&#x1F512;</span> {t('app.security')}
         </p>
-        {SITE_URL && <p className="mt-3 text-xs"><a href={SITE_URL} className="text-gray-500 hover:text-blue-600 hover:border-blue-400 transition-colors border border-gray-300 rounded-full px-4 py-1.5" style={{textDecoration:'none'}}>graphicscomputing.fr</a></p>}
       </div>
     )
   }
