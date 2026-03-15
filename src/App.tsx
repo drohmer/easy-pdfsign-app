@@ -121,7 +121,7 @@ function App() {
         <p className="mt-6 sm:mt-8 text-xs text-gray-400 flex items-center gap-1.5 text-center">
           <span>&#x1F512;</span> {t('app.security')}
         </p>
-        {SITE_URL && <p className="mt-2 text-xs"><a href={SITE_URL} className="text-gray-400 hover:text-blue-500 transition-colors" style={{textDecoration:'none'}}>graphicscomputing.fr</a></p>}
+        {SITE_URL && <p className="mt-3 text-xs"><a href={SITE_URL} className="text-gray-500 hover:text-blue-600 hover:border-blue-400 transition-colors border border-gray-300 rounded-full px-4 py-1.5" style={{textDecoration:'none'}}>graphicscomputing.fr</a></p>}
       </div>
     )
   }
