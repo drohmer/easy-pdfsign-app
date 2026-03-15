@@ -284,6 +284,20 @@ export async function analyzePdfForSignature(
         for (const kw of SIGNATURE_KEYWORDS) {
           if (!text.includes(kw.keyword)) continue
 
+          // Reject matches where the keyword is part of a longer word
+          // e.g. "Prestataire" contains "signe" but is not a signature field
+          const idx = text.indexOf(kw.keyword)
+          const before = idx > 0 ? text[idx - 1] : ' '
+          const after = idx + kw.keyword.length < text.length ? text[idx + kw.keyword.length] : ' '
+          const wordBoundary = /[\s,:;.!?()«»"'\-\/]/
+          if (!wordBoundary.test(before) && before !== ' ' && idx !== 0) continue
+          if (!wordBoundary.test(after) && after !== ' ' && idx + kw.keyword.length !== text.length) continue
+
+          // Skip if the keyword appears inside a long text fragment (likely a sentence, not a label)
+          // Signature labels are typically short: "Signature :", "Fait à Paris", etc.
+          const trimmed = item.str.trim()
+          if (trimmed.length > kw.keyword.length + 25) continue
+
           // Render canvas for this page on first match
           if (!pageCanvas) {
             if (pageCanvases.has(p)) {
