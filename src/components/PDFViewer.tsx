@@ -234,7 +234,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
   }, [onAddElement])
 
   return (
-    <div ref={containerRef} className={`flex flex-col items-center gap-6 ${!drawingMode && zoom > 1 ? 'cursor-grab' : ''}`}>
+    <div ref={containerRef} className={`flex flex-col gap-6 ${!drawingMode && zoom > 1 ? 'cursor-grab' : ''}`}>
       <Document
         file={pdfFile}
         onLoadSuccess={onDocumentLoadSuccess}
@@ -249,7 +249,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
             key={i}
             data-page={i + 1}
             className="relative mb-6 shadow-lg bg-white"
-            style={{ width: pageWidth }}
+            style={{ width: pageWidth, margin: '0 auto' }}
             onDrop={(e) => handlePageDrop(e, i + 1)}
             onDragOver={handleDragOver}
           >
