@@ -42,7 +42,6 @@ interface Props {
   onAddElement: (element: SignatureElement) => void
   elements: SignatureElement[]
   onRemoveElement: (id: string) => void
-  numPages: number
   visiblePage: number
   suggestedPlacements: SignaturePlacement[]
   penColor: string
@@ -54,12 +53,12 @@ export function SignaturePanel({
   onAddElement,
   elements,
   onRemoveElement,
-  numPages,
   visiblePage,
   suggestedPlacements,
   penColor,
 }: Props) {
   const suggestedPlacement = suggestedPlacements[0] ?? null
+  const hasDetection = suggestedPlacement !== null && suggestedPlacement.confidence !== 'none'
   const { t, language } = useLanguage()
   const [isDragOver, setIsDragOver] = useState(false)
   const [dateText, setDateText] = useState(
@@ -98,8 +97,8 @@ export function SignaturePanel({
 
   const placeSignature = useCallback(() => {
     if (!signatureImage) return
-    const placement = suggestedPlacement ?? { x: 0.55, y: 0.82, page: numPages || 1 }
-    const sw = suggestedPlacement?.width ?? 0.2
+    const placement = hasDetection ? suggestedPlacement! : { x: 0.6, y: 0.82, page: visiblePage || 1 }
+    const sw = hasDetection ? suggestedPlacement!.width : 0.2
     // Load image to get aspect ratio for correct height
     const img = new Image()
     img.onload = () => {
@@ -116,7 +115,7 @@ export function SignaturePanel({
       })
     }
     img.src = signatureImage
-  }, [signatureImage, numPages, onAddElement, suggestedPlacement])
+  }, [signatureImage, hasDetection, visiblePage, onAddElement, suggestedPlacement])
 
   const getVisibleY = useCallback(() => {
     const scrollContainer = document.querySelector('main')
@@ -229,7 +228,13 @@ export function SignaturePanel({
             className="hidden"
           />
           {signatureImage ? (
-            <img src={signatureImage} alt="Signature" className="max-h-16 mx-auto" />
+            <img
+              src={signatureImage}
+              alt="Signature"
+              className="max-h-16 mx-auto cursor-grab"
+              draggable
+              onDragStart={(e) => e.dataTransfer.setData('application/x-signature', signatureImage)}
+            />
           ) : (
             <div>
               <p className="text-sm text-gray-500">{t('signature.dropHint')}</p>
@@ -242,7 +247,7 @@ export function SignaturePanel({
             onClick={placeSignature}
             className="mt-2 w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors cursor-pointer"
           >
-            {signatures.length > 0 ? t('signature.placeAnother') : suggestedPlacement ? t('signature.place') : t('signature.add')}
+            {signatures.length > 0 ? t('signature.placeAnother') : hasDetection ? t('signature.place') : t('signature.placeOnPage')}
           </button>
         )}
         {suggestedPlacement && (
@@ -269,6 +274,7 @@ export function SignaturePanel({
             </pre>
           </details>
         )}
+        <p className="mt-2 text-[11px] text-gray-400 text-center">{t('signature.dragHint')}</p>
       </section>
 
       <FieldInput label="name.title" value={nameText} onChange={setNameText} onAdd={addName} placeholder="name.placeholder" />

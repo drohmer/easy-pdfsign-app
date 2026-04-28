@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { PDFDropZone } from './components/PDFDropZone'
 import { PDFViewer } from './components/PDFViewer'
 import { SignaturePanel } from './components/SignaturePanel'
@@ -29,7 +29,7 @@ function App() {
     () => localStorage.getItem('autosign_signature_image')
   )
   const [elements, setElements] = useState<SignatureElement[]>([])
-  const [numPages, setNumPages] = useState(0)
+  const [, setNumPages] = useState(0)
   const [visiblePage, setVisiblePage] = useState(1)
   const [pageWidth, setPageWidth] = useState(612)
   const [showOutlines, setShowOutlines] = useState(false)
@@ -38,6 +38,15 @@ function App() {
   const [drawingMode, setDrawingMode] = useState(false)
   const [penColor, setPenColor] = useState('#1f2937')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [copiedElement, setCopiedElement] = useState<SignatureElement | null>(null)
+  const pasteSourceRef = useRef<SignatureElement | null>(null)
+  const lastPastedIdRef = useRef<string | null>(null)
+  const elementsRef = useRef(elements)
+  useEffect(() => { elementsRef.current = elements }, [elements])
+  useEffect(() => {
+    pasteSourceRef.current = copiedElement
+    lastPastedIdRef.current = null
+  }, [copiedElement])
 
   const handleDrawingModeOff = useCallback(() => setDrawingMode(false), [])
 
@@ -62,6 +71,39 @@ function App() {
     return () => window.removeEventListener('wheel', handleWheel)
   }, [])
 
+  const addElement = useCallback((element: SignatureElement) => {
+    setElements(prev => [...prev, element])
+    setVisiblePage(current => {
+      if (current !== element.page) {
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-page="${element.page}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      }
+      return current
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!copiedElement) return
+    const handlePaste = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'v') return
+      if (!pasteSourceRef.current) return
+      e.preventDefault()
+      const lastPasted = lastPastedIdRef.current
+        ? elementsRef.current.find(el => el.id === lastPastedIdRef.current) ?? pasteSourceRef.current
+        : pasteSourceRef.current
+      const newX = Math.min(0.9, lastPasted.x + 0.02)
+      const newY = Math.min(0.9, lastPasted.y + 0.02)
+      const id = `${lastPasted.type}-${Date.now()}`
+      const pasted = { ...lastPasted, id, x: newX, y: newY }
+      lastPastedIdRef.current = id
+      pasteSourceRef.current = pasted
+      addElement(pasted)
+    }
+    window.addEventListener('keydown', handlePaste)
+    return () => window.removeEventListener('keydown', handlePaste)
+  }, [copiedElement, addElement])
+
   const handlePdfDrop = useCallback((file: File) => {
     setPdfFile(file)
     setElements([])
@@ -76,10 +118,6 @@ function App() {
   const handleSignatureDrop = useCallback((dataUrl: string) => {
     setSignatureImage(dataUrl)
     localStorage.setItem('autosign_signature_image', dataUrl)
-  }, [])
-
-  const addElement = useCallback((element: SignatureElement) => {
-    setElements(prev => [...prev, element])
   }, [])
 
   const updateElement = useCallback((id: string, updates: Partial<SignatureElement>) => {
@@ -219,7 +257,6 @@ function App() {
               onAddElement={addElement}
               elements={elements}
               onRemoveElement={removeElement}
-              numPages={numPages}
               visiblePage={visiblePage}
               suggestedPlacements={suggestedPlacements}
               penColor={penColor}
@@ -248,6 +285,7 @@ function App() {
             drawingMode={drawingMode}
             penColor={penColor}
             onDrawingModeOff={handleDrawingModeOff}
+            onCopy={setCopiedElement}
           />
         </main>
       </div>

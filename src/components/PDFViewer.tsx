@@ -25,6 +25,7 @@ interface Props {
   drawingMode: boolean
   penColor: string
   onDrawingModeOff: () => void
+  onCopy: (element: SignatureElement) => void
 }
 
 function PageDrawingOverlay({ pageNumber, pageWidth, penColor, onDrawingComplete, onCancel }: {
@@ -63,7 +64,7 @@ function PageDrawingOverlay({ pageNumber, pageWidth, penColor, onDrawingComplete
   )
 }
 
-export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateElement, onRemoveElement, onNumPages, onVisiblePageChange, onAddElement, onSignatureImageSet, onPageWidthChange, showOutlines, suggestedPlacements, signatureImage, zoom, drawingMode, penColor, onDrawingModeOff }: Props) {
+export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateElement, onRemoveElement, onNumPages, onVisiblePageChange, onAddElement, onSignatureImageSet, onPageWidthChange, showOutlines, suggestedPlacements, signatureImage, zoom, drawingMode, penColor, onDrawingModeOff, onCopy }: Props) {
   const { t } = useLanguage()
   const [numPages, setNumPages] = useState(0)
   const [pageWidth, setPageWidth] = useState(612)
@@ -178,43 +179,51 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
     return () => observer.disconnect()
   }, [numPages, onVisiblePageChange])
 
-  const handlePageDrop = useCallback((e: React.DragEvent, pageNumber: number) => {
-    const file = e.dataTransfer.files[0]
-    if (!file || !file.type.startsWith('image/')) return // let non-image drops (PDF) bubble up
-    e.preventDefault()
-    e.stopPropagation()
+  const placeImageOnPage = useCallback((dataUrl: string, pageNumber: number, cursorX: number, cursorY: number) => {
+    const img = new Image()
+    img.onload = () => {
+      const sigWidth = 0.18
+      const sigHeight = sigWidth * (img.naturalHeight / img.naturalWidth)
+      onAddElement({
+        id: `sig-${Date.now()}`,
+        type: 'signature',
+        x: Math.max(0, Math.min(1 - sigWidth, cursorX - sigWidth / 2)),
+        y: Math.max(0, cursorY - sigHeight / 2),
+        width: sigWidth,
+        height: sigHeight,
+        content: dataUrl,
+        page: pageNumber,
+      })
+    }
+    img.src = dataUrl
+  }, [onAddElement])
 
-    // Capture drop coordinates now (event will be recycled)
+  const handlePageDrop = useCallback((e: React.DragEvent, pageNumber: number) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const cursorX = (e.clientX - rect.left) / pageWidth
     const cursorY = (e.clientY - rect.top) / pageWidth
+
+    const sigDataUrl = e.dataTransfer.getData('application/x-signature')
+    if (sigDataUrl) {
+      e.preventDefault()
+      e.stopPropagation()
+      placeImageOnPage(sigDataUrl, pageNumber, cursorX, cursorY)
+      return
+    }
+
+    const file = e.dataTransfer.files[0]
+    if (!file || !file.type.startsWith('image/')) return
+    e.preventDefault()
+    e.stopPropagation()
 
     const reader = new FileReader()
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string
       onSignatureImageSet(dataUrl)
-
-      // Load the image to get its natural aspect ratio
-      const img = new Image()
-      img.onload = () => {
-        const sigWidth = 0.18
-        const sigHeight = sigWidth * (img.naturalHeight / img.naturalWidth)
-
-        onAddElement({
-          id: `sig-${Date.now()}`,
-          type: 'signature',
-          x: Math.max(0, Math.min(1 - sigWidth, cursorX - sigWidth / 2)),
-          y: Math.max(0, cursorY - sigHeight / 2),
-          width: sigWidth,
-          height: sigHeight,
-          content: dataUrl,
-          page: pageNumber,
-        })
-      }
-      img.src = dataUrl
+      placeImageOnPage(dataUrl, pageNumber, cursorX, cursorY)
     }
     reader.readAsDataURL(file)
-  }, [pageWidth, onAddElement, onSignatureImageSet])
+  }, [pageWidth, placeImageOnPage, onSignatureImageSet])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -260,7 +269,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
               renderAnnotationLayer={false}
             />
             {suggestedPlacements
-              .filter(sp => sp.page === i + 1)
+              .filter(sp => sp.confidence !== 'none' && sp.page === i + 1)
               .map((sp, idx) => {
                 const sw = sp.width ?? 0.2
                 const sh = signatureImage ? sw * sigRatio : (sp.height ?? 0.06)
@@ -307,6 +316,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
                   containerWidth={pageWidth}
                   onUpdate={(updates) => onUpdateElement(el.id, updates)}
                   onDelete={() => onRemoveElement(el.id)}
+                  onCopy={onCopy}
                   showOutline={showOutlines}
                 />
               ))

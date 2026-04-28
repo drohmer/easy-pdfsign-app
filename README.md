@@ -6,16 +6,17 @@ A simple, free and open source web app to sign PDF documents. Everything runs lo
 
 ## Features
 
-- **Drag & drop** your PDF and signature image
+- **Drag & drop** your PDF and signature image — drop the image directly onto the PDF page for precise placement
 - **Automatic signature placement** — the app analyzes your document and suggests the best spot
 - **100% local & private** — no server upload, no account, no tracking
 - **Draw on the PDF** — annotate or initial directly on the document
 - **Add text fields** — date, name, location, free text, checkboxes
 - **Font size & color** adjustable per element
 - **Move, resize, edit** any element freely
+- **Copy/paste elements** — Cmd/Ctrl+C then Cmd/Ctrl+V, each paste offset from the last
 - **One-click export** of the signed PDF in high quality
-- **Multi-page** support
-- **Keyboard shortcuts** — Delete, Escape, Ctrl+wheel zoom
+- **Multi-page** support with auto-scroll to the added element's page
+- **Keyboard shortcuts** — Delete, Escape, Ctrl+wheel zoom, Cmd+C/V
 - **Signature remembered** locally between sessions
 - **EN/FR** bilingual interface
 

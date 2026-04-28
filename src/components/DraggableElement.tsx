@@ -6,6 +6,7 @@ interface Props {
   containerWidth: number
   onUpdate: (updates: Partial<SignatureElement>) => void
   onDelete: () => void
+  onCopy: (element: SignatureElement) => void
   showOutline: boolean
 }
 
@@ -13,7 +14,7 @@ const DEFAULT_FONT_SIZE = 14
 const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
 
-export const DraggableElement = memo(function DraggableElement({ element, containerWidth, onUpdate, onDelete, showOutline }: Props) {
+export const DraggableElement = memo(function DraggableElement({ element, containerWidth, onUpdate, onDelete, onCopy, showOutline }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [isNew, setIsNew] = useState(true)
   const [isSelected, setIsSelected] = useState(false)
@@ -38,17 +39,30 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     onDeleteRef.current = onDelete
   }, [onDelete])
 
+  const elementDataRef = useRef(element)
+  useEffect(() => {
+    elementDataRef.current = element
+  }, [element])
+
+  const onCopyRef = useRef(onCopy)
+  useEffect(() => {
+    onCopyRef.current = onCopy
+  }, [onCopy])
+
   // Handle Delete/Backspace key when selected
   useEffect(() => {
     if (!isSelected) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Don't delete if editing text
         if (document.activeElement?.tagName === 'INPUT') return
         e.preventDefault()
         onDeleteRef.current()
       }
       if (e.key === 'Escape') setIsSelected(false)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        e.preventDefault()
+        onCopyRef.current(elementDataRef.current)
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
