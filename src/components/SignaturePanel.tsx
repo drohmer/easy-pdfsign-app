@@ -3,6 +3,13 @@ import type { SignatureElement } from '../App'
 import type { SignaturePlacement } from '../utils/pdfAnalysis'
 import { useLanguage } from '../i18n'
 import type { TranslationKey } from '../i18n/translations'
+import { safeGet, safeSet } from '../utils/storage'
+import {
+  DEFAULT_SIG_WIDTH_NO_DETECTION,
+  FALLBACK_SIG_X,
+  FALLBACK_SIG_Y,
+  TEXT_FIELD_X,
+} from '../utils/constants'
 
 function FieldInput({ label, value, onChange, onAdd, placeholder, onKeyDown }: {
   label: TranslationKey
@@ -38,6 +45,7 @@ function FieldInput({ label, value, onChange, onAdd, placeholder, onKeyDown }: {
 
 interface Props {
   signatureImage: string | null
+  sigRatio: number
   onSignatureDrop: (dataUrl: string) => void
   onAddElement: (element: SignatureElement) => void
   elements: SignatureElement[]
@@ -49,6 +57,7 @@ interface Props {
 
 export function SignaturePanel({
   signatureImage,
+  sigRatio,
   onSignatureDrop,
   onAddElement,
   elements,
@@ -58,17 +67,17 @@ export function SignaturePanel({
   penColor,
 }: Props) {
   const suggestedPlacement = suggestedPlacements[0] ?? null
-  const hasDetection = suggestedPlacement !== null && suggestedPlacement.confidence !== 'none'
+  const hasDetection = suggestedPlacement !== null
   const { t, language } = useLanguage()
   const [isDragOver, setIsDragOver] = useState(false)
   const [dateText, setDateText] = useState(
     new Date().toLocaleDateString(language === 'fr' ? 'fr-FR' : 'en-GB')
   )
   const [nameText, setNameText] = useState(
-    () => localStorage.getItem('autosign_name') || ''
+    () => safeGet('autosign_name') || ''
   )
   const [locationText, setLocationText] = useState(
-    () => localStorage.getItem('autosign_location') || ''
+    () => safeGet('autosign_location') || ''
   )
   const [freeText, setFreeText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -80,8 +89,9 @@ export function SignaturePanel({
       const dataUrl = e.target?.result as string
       onSignatureDrop(dataUrl)
     }
+    reader.onerror = () => alert(t('error.readFile'))
     reader.readAsDataURL(file)
-  }, [onSignatureDrop])
+  }, [onSignatureDrop, t])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -97,25 +107,21 @@ export function SignaturePanel({
 
   const placeSignature = useCallback(() => {
     if (!signatureImage) return
-    const placement = hasDetection ? suggestedPlacement! : { x: 0.6, y: 0.82, page: visiblePage || 1 }
-    const sw = hasDetection ? suggestedPlacement!.width : 0.2
-    // Load image to get aspect ratio for correct height
-    const img = new Image()
-    img.onload = () => {
-      const sh = sw * (img.naturalHeight / img.naturalWidth)
-      onAddElement({
-        id: `sig-${Date.now()}`,
-        type: 'signature',
-        x: placement.x,
-        y: placement.y,
-        width: sw,
-        height: sh,
-        content: signatureImage,
-        page: placement.page,
-      })
-    }
-    img.src = signatureImage
-  }, [signatureImage, hasDetection, visiblePage, onAddElement, suggestedPlacement])
+    const placement = hasDetection
+      ? suggestedPlacement!
+      : { x: FALLBACK_SIG_X, y: FALLBACK_SIG_Y, page: visiblePage || 1 }
+    const sw = hasDetection ? suggestedPlacement!.width : DEFAULT_SIG_WIDTH_NO_DETECTION
+    onAddElement({
+      id: crypto.randomUUID(),
+      type: 'signature',
+      x: placement.x,
+      y: placement.y,
+      width: sw,
+      height: sw * sigRatio,
+      content: signatureImage,
+      page: placement.page,
+    })
+  }, [signatureImage, hasDetection, visiblePage, onAddElement, suggestedPlacement, sigRatio])
 
   const getVisibleY = useCallback(() => {
     const scrollContainer = document.querySelector('main')
@@ -124,85 +130,54 @@ export function SignaturePanel({
     const scrollRect = scrollContainer.getBoundingClientRect()
     const pageRect = pageEl.getBoundingClientRect()
     const viewportCenterY = scrollRect.top + scrollRect.height / 2
-    return Math.max(0.05, (viewportCenterY - pageRect.top) / pageRect.width)
+    const rawY = (viewportCenterY - pageRect.top) / pageRect.width
+    const maxY = (pageRect.height / pageRect.width) * 0.9
+    return Math.max(0.05, Math.min(maxY, rawY))
   }, [visiblePage])
+
+  // Build a text-like element (date / name / location / text / check / cross).
+  // Position defaults to the visible area of the current page; color follows the pen.
+  const createTextElement = useCallback(
+    (type: SignatureElement['type'], content: string, width: number): SignatureElement => ({
+      id: crypto.randomUUID(),
+      type,
+      x: TEXT_FIELD_X,
+      y: getVisibleY(),
+      width,
+      height: 0.025,
+      content,
+      page: visiblePage,
+      color: penColor,
+    }),
+    [getVisibleY, visiblePage, penColor],
+  )
 
   const addDate = useCallback(() => {
     if (!dateText.trim()) return
-    onAddElement({
-      id: `date-${Date.now()}`,
-      type: 'date',
-      x: 0.1,
-      y: getVisibleY(),
-      width: 0.2,
-      height: 0.025,
-      content: dateText,
-      page: visiblePage,
-      color: penColor,
-    })
-  }, [dateText, visiblePage, onAddElement, getVisibleY, penColor])
+    onAddElement(createTextElement('date', dateText, 0.2))
+  }, [dateText, onAddElement, createTextElement])
 
   const addName = useCallback(() => {
     if (!nameText.trim()) return
-    localStorage.setItem('autosign_name', nameText.trim())
-    onAddElement({
-      id: `name-${Date.now()}`,
-      type: 'name',
-      x: 0.1,
-      y: getVisibleY(),
-      width: 0.25,
-      height: 0.025,
-      content: nameText,
-      page: visiblePage,
-      color: penColor,
-    })
-  }, [nameText, visiblePage, onAddElement, getVisibleY, penColor])
+    safeSet('autosign_name', nameText.trim())
+    onAddElement(createTextElement('name', nameText, 0.25))
+  }, [nameText, onAddElement, createTextElement])
 
   const addLocation = useCallback(() => {
     if (!locationText.trim()) return
-    localStorage.setItem('autosign_location', locationText.trim())
-    onAddElement({
-      id: `loc-${Date.now()}`,
-      type: 'location',
-      x: 0.1,
-      y: getVisibleY(),
-      width: 0.25,
-      height: 0.025,
-      content: locationText,
-      page: visiblePage,
-      color: penColor,
-    })
-  }, [locationText, visiblePage, onAddElement, getVisibleY, penColor])
+    safeSet('autosign_location', locationText.trim())
+    onAddElement(createTextElement('location', locationText, 0.25))
+  }, [locationText, onAddElement, createTextElement])
 
   const addCheck = useCallback((type: 'check' | 'cross') => {
-    onAddElement({
-      id: `${type}-${Date.now()}`,
-      type,
-      x: 0.1,
-      y: getVisibleY(),
-      width: 0.025,
-      height: 0.025,
-      content: type === 'check' ? '✓' : '✗',
-      page: visiblePage,
-      color: penColor,
-    })
-  }, [visiblePage, onAddElement, getVisibleY, penColor])
+    onAddElement(createTextElement(type, type === 'check' ? '✓' : '✗', 0.025))
+  }, [onAddElement, createTextElement])
 
   const addFreeText = useCallback(() => {
     if (!freeText.trim()) return
-    onAddElement({
-      id: `txt-${Date.now()}`,
-      type: 'text',
-      x: 0.1,
-      y: getVisibleY(),
-      width: 0.3,
-      height: 0.025,
-      content: freeText,
-      page: visiblePage,
-      color: penColor,
-    })
+    onAddElement(createTextElement('text', freeText, 0.3))
     setFreeText('')
-  }, [freeText, visiblePage, onAddElement, getVisibleY, penColor])
+  }, [freeText, onAddElement, createTextElement])
 
   const signatures = elements.filter(e => e.type === 'signature')
 

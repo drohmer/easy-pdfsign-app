@@ -78,6 +78,22 @@ export function DrawingCanvas({ pageWidth, pageHeight, color, onDrawingComplete,
     ctx.stroke()
   }, [getPos])
 
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const canvas = canvasRef.current
+        if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+        isDrawing.current = false
+        onCancelRef.current()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
   const handleMouseUp = useCallback(() => {
     if (!isDrawing.current) return
     isDrawing.current = false

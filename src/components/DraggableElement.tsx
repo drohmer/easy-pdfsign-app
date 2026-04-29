@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useState, memo } from 'react'
 import type { SignatureElement } from '../App'
+import { DEFAULT_TEXT_COLOR } from '../utils/constants'
 
 interface Props {
   element: SignatureElement
@@ -7,6 +8,9 @@ interface Props {
   onUpdate: (updates: Partial<SignatureElement>) => void
   onDelete: () => void
   onCopy: (element: SignatureElement) => void
+  onSelect: () => void
+  onDeselect: () => void
+  isSelected: boolean
   showOutline: boolean
 }
 
@@ -14,42 +18,33 @@ const DEFAULT_FONT_SIZE = 14
 const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
 
-export const DraggableElement = memo(function DraggableElement({ element, containerWidth, onUpdate, onDelete, onCopy, showOutline }: Props) {
+export const DraggableElement = memo(function DraggableElement({ element, containerWidth, onUpdate, onDelete, onCopy, onSelect, onDeselect, isSelected, showOutline }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [isNew, setIsNew] = useState(true)
-  const [isSelected, setIsSelected] = useState(false)
   const [editText, setEditText] = useState(element.content)
   const inputRef = useRef<HTMLInputElement>(null)
   const elementRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef({ x: 0, y: 0, elX: 0, elY: 0 })
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
+
+  // Always-fresh callback refs — updated synchronously each render, safe to call from event handlers
   const onUpdateRef = useRef(onUpdate)
+  onUpdateRef.current = onUpdate
+  const onDeleteRef = useRef(onDelete)
+  onDeleteRef.current = onDelete
+  const onCopyRef = useRef(onCopy)
+  onCopyRef.current = onCopy
+  const onDeselectRef = useRef(onDeselect)
+  onDeselectRef.current = onDeselect
+  const elementDataRef = useRef(element)
+  elementDataRef.current = element
 
   useEffect(() => {
     const timer = setTimeout(() => setIsNew(false), 1500)
     return () => clearTimeout(timer)
   }, [])
 
-  useEffect(() => {
-    onUpdateRef.current = onUpdate
-  }, [onUpdate])
-
-  const onDeleteRef = useRef(onDelete)
-  useEffect(() => {
-    onDeleteRef.current = onDelete
-  }, [onDelete])
-
-  const elementDataRef = useRef(element)
-  useEffect(() => {
-    elementDataRef.current = element
-  }, [element])
-
-  const onCopyRef = useRef(onCopy)
-  useEffect(() => {
-    onCopyRef.current = onCopy
-  }, [onCopy])
-
-  // Handle Delete/Backspace key when selected
+  // Handle Delete/Backspace/Escape/Copy key when selected
   useEffect(() => {
     if (!isSelected) return
     const handleKey = (e: KeyboardEvent) => {
@@ -58,7 +53,7 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
         e.preventDefault()
         onDeleteRef.current()
       }
-      if (e.key === 'Escape') setIsSelected(false)
+      if (e.key === 'Escape') onDeselectRef.current()
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
         e.preventDefault()
         onCopyRef.current(elementDataRef.current)
@@ -66,18 +61,6 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [isSelected])
-
-  // Deselect when clicking outside
-  useEffect(() => {
-    if (!isSelected) return
-    const handleClick = (e: MouseEvent) => {
-      if (!elementRef.current?.contains(e.target as Node)) {
-        setIsSelected(false)
-      }
-    }
-    window.addEventListener('mousedown', handleClick)
-    return () => window.removeEventListener('mousedown', handleClick)
   }, [isSelected])
 
   const isText = element.type !== 'signature' && element.type !== 'drawing'
@@ -96,8 +79,12 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     e.stopPropagation()
     setEditText(element.content)
     setIsEditing(true)
-    setTimeout(() => inputRef.current?.focus(), 0)
   }, [element.type, element.content, isCheckbox])
+
+  // Focus the input when entering edit mode (after React commits the input to the DOM)
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus()
+  }, [isEditing])
 
   const commitEdit = useCallback(() => {
     setIsEditing(false)
@@ -108,13 +95,15 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     }
   }, [editText, element.content])
 
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    setIsSelected(true)
+    onSelectRef.current()
     if (isEditing) return
     if ((e.target as HTMLElement).dataset.resize) return
     if ((e.target as HTMLElement).dataset.fontsize) return
     e.preventDefault()
-    e.stopPropagation()
     const el = elementRef.current
     if (!el) return
 
@@ -142,14 +131,31 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
       window.removeEventListener('mouseup', handleUp)
 
       const elRect = el.getBoundingClientRect()
-      const centerX = elRect.left + elRect.width / 2
       const centerY = elRect.top + elRect.height / 2
-      const elems = document.elementsFromPoint(centerX, centerY)
-      const pageContainer = elems.find(e => (e as HTMLElement).dataset?.page)
 
-      if (pageContainer) {
-        const targetPage = parseInt((pageContainer as HTMLElement).dataset.page!, 10)
-        const pageRect = pageContainer.getBoundingClientRect()
+      const pageDivs = Array.from(document.querySelectorAll('[data-page]'))
+      let pageContainer: Element | undefined
+      let closestContainer: Element | undefined
+      let closestDist = Infinity
+
+      for (const div of pageDivs) {
+        const rect = div.getBoundingClientRect()
+        if (centerY >= rect.top && centerY <= rect.bottom) {
+          pageContainer = div
+          break
+        }
+        const dist = Math.min(Math.abs(centerY - rect.top), Math.abs(centerY - rect.bottom))
+        if (dist < closestDist) {
+          closestDist = dist
+          closestContainer = div
+        }
+      }
+
+      const target = pageContainer ?? closestContainer
+
+      if (target) {
+        const targetPage = parseInt((target as HTMLElement).dataset.page!, 10)
+        const pageRect = target.getBoundingClientRect()
         onUpdateRef.current({
           x: Math.max(0, (elRect.left - pageRect.left) / cw),
           y: Math.max(0, (elRect.top - pageRect.top) / cw),
@@ -241,7 +247,7 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
         <div
           className="w-full h-full pointer-events-none select-none"
           style={{
-            backgroundColor: element.color || '#1f2937',
+            backgroundColor: element.color || DEFAULT_TEXT_COLOR,
             maskImage: `url(${element.content})`,
             maskSize: 'contain',
             maskRepeat: 'no-repeat',
@@ -266,14 +272,14 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
             if (e.key === 'Escape') { setEditText(element.content); setIsEditing(false) }
           }}
           className="w-full h-full bg-white/80 border-none outline-none px-1"
-          style={{ fontSize, color: element.color || '#1f2937' }}
+          style={{ fontSize, color: element.color || DEFAULT_TEXT_COLOR }}
         />
       )
     }
     return (
       <span
         className="leading-normal whitespace-nowrap select-none pointer-events-none px-1 py-0.5"
-        style={{ fontSize, color: element.color || '#1f2937' }}
+        style={{ fontSize, color: element.color || DEFAULT_TEXT_COLOR }}
       >
         {element.content}
       </span>
@@ -334,7 +340,7 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
           )}
           <input
             type="color"
-            value={element.color || '#1f2937'}
+            value={element.color || DEFAULT_TEXT_COLOR}
             onChange={(e) => onUpdateRef.current({ color: e.target.value })}
             onMouseDown={(e) => e.stopPropagation()}
             className="w-5 h-5 rounded cursor-pointer border border-gray-300 p-0"

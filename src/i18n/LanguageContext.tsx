@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import translations, { type Language, type TranslationKey } from './translations'
+import { safeGet, safeSet } from '../utils/storage'
 
 interface LanguageContextValue {
   language: Language
@@ -11,13 +12,13 @@ const LanguageContext = createContext<LanguageContextValue>(null!)
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>(
-    () => (localStorage.getItem('language') as Language) || 'fr'
+    () => (safeGet('language') as Language) || 'fr'
   )
 
   const toggleLanguage = useCallback(() => {
     setLanguage(prev => {
       const next = prev === 'fr' ? 'en' : 'fr'
-      localStorage.setItem('language', next)
+      safeSet('language', next)
       return next
     })
   }, [])

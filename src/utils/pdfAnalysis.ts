@@ -357,6 +357,8 @@ export async function analyzePdfForSignature(
     defaultY = (lastViewport.height * 0.85) / lastViewport.width
     lastPage.cleanup()
 
+    pageCanvases.forEach(({ canvas }) => { canvas.width = 0; canvas.height = 0 })
+    pageCanvases.clear()
     doc.destroy()
 
     if (matches.length > 0) {

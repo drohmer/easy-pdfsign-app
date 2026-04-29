@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib'
 import { pdfjs } from 'react-pdf'
 import type { SignatureElement } from '../App'
 import { useLanguage } from '../i18n'
+import { DEFAULT_TEXT_COLOR } from '../utils/constants'
 
 interface Props {
   pdfData: Uint8Array
@@ -50,7 +51,8 @@ export function ExportButton({ pdfData, elements, fileName, displayPageWidth }: 
         const canvas = document.createElement('canvas')
         canvas.width = renderViewport.width
         canvas.height = renderViewport.height
-        const ctx = canvas.getContext('2d')!
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Canvas 2D context unavailable')
         await pdfPage.render({ canvasContext: ctx, viewport: renderViewport, canvas } as never).promise
 
         // Element coordinates are fractions of displayPageWidth.
@@ -83,7 +85,9 @@ export function ExportButton({ pdfData, elements, fileName, displayPageWidth }: 
               const recolor = document.createElement('canvas')
               recolor.width = img.naturalWidth
               recolor.height = img.naturalHeight
-              const rctx = recolor.getContext('2d')!
+              const rctx = recolor.getContext('2d')
+              if (!rctx) throw new Error('Canvas 2D context unavailable')
+
               rctx.drawImage(img, 0, 0)
               const idata = rctx.getImageData(0, 0, recolor.width, recolor.height)
               const r = parseInt(el.color.slice(1, 3), 16)
@@ -104,7 +108,7 @@ export function ExportButton({ pdfData, elements, fileName, displayPageWidth }: 
           } else {
             const fontSize = (el.fontSize ?? 14) * qualityScale
             ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-            ctx.fillStyle = el.color || '#1f2937'
+            ctx.fillStyle = el.color || DEFAULT_TEXT_COLOR
             ctx.textBaseline = 'top'
             // Match CSS offsets: border-2 (2px) + px-1 (4px) = 6px horizontal,
             // border-2 (2px) + py-0.5 (2px) + half-leading (3.5px) = 7.5px vertical

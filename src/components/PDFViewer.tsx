@@ -5,27 +5,36 @@ import { DrawingCanvas } from './DrawingCanvas'
 import type { SignatureElement } from '../App'
 import type { SignaturePlacement } from '../utils/pdfAnalysis'
 import { useLanguage } from '../i18n'
+import { DEFAULT_SIG_WIDTH_DROP } from '../utils/constants'
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
-interface Props {
-  pdfData: Uint8Array
+interface ElementProps {
   elements: SignatureElement[]
+  onAddElement: (element: SignatureElement) => void
   onUpdateElement: (id: string, updates: Partial<SignatureElement>) => void
   onRemoveElement: (id: string) => void
-  onNumPages: (n: number) => void
-  onVisiblePageChange: (page: number) => void
-  onAddElement: (element: SignatureElement) => void
-  onSignatureImageSet: (dataUrl: string) => void
-  onPageWidthChange: (width: number) => void
-  showOutlines: boolean
-  suggestedPlacements: SignaturePlacement[]
-  signatureImage: string | null
-  zoom: number
+  selectedElementId: string | null
+  onSelectElement: (id: string | null) => void
+  onCopy: (element: SignatureElement) => void
+}
+
+interface DrawingProps {
   drawingMode: boolean
   penColor: string
   onDrawingModeOff: () => void
-  onCopy: (element: SignatureElement) => void
+}
+
+interface Props extends ElementProps, DrawingProps {
+  pdfData: Uint8Array
+  signatureImage: string | null
+  sigRatio: number
+  suggestedPlacements: SignaturePlacement[]
+  zoom: number
+  showOutlines: boolean
+  onVisiblePageChange: (page: number) => void
+  onPageWidthChange: (width: number) => void
+  onSignatureImageSet: (dataUrl: string) => void
 }
 
 function PageDrawingOverlay({ pageNumber, pageWidth, penColor, onDrawingComplete, onCancel }: {
@@ -64,20 +73,11 @@ function PageDrawingOverlay({ pageNumber, pageWidth, penColor, onDrawingComplete
   )
 }
 
-export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateElement, onRemoveElement, onNumPages, onVisiblePageChange, onAddElement, onSignatureImageSet, onPageWidthChange, showOutlines, suggestedPlacements, signatureImage, zoom, drawingMode, penColor, onDrawingModeOff, onCopy }: Props) {
+export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateElement, onRemoveElement, onVisiblePageChange, onAddElement, onSignatureImageSet, onPageWidthChange, showOutlines, suggestedPlacements, signatureImage, sigRatio, zoom, drawingMode, penColor, onDrawingModeOff, onCopy, selectedElementId, onSelectElement }: Props) {
   const { t } = useLanguage()
   const [numPages, setNumPages] = useState(0)
   const [pageWidth, setPageWidth] = useState(612)
-  const [sigRatio, setSigRatio] = useState(0.4) // height/width ratio of signature image
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // Compute signature image aspect ratio
-  useEffect(() => {
-    if (!signatureImage) return
-    const img = new Image()
-    img.onload = () => setSigRatio(img.naturalHeight / img.naturalWidth)
-    img.src = signatureImage
-  }, [signatureImage])
 
   // Panning (grab to scroll) — only when zoomed in and not drawing
   const isPanning = useRef(false)
@@ -134,8 +134,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
 
   const onDocumentLoadSuccess = useCallback(({ numPages: n }: { numPages: number }) => {
     setNumPages(n)
-    onNumPages(n)
-  }, [onNumPages])
+  }, [])
 
   useEffect(() => {
     const updateWidth = () => {
@@ -182,10 +181,10 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
   const placeImageOnPage = useCallback((dataUrl: string, pageNumber: number, cursorX: number, cursorY: number) => {
     const img = new Image()
     img.onload = () => {
-      const sigWidth = 0.18
+      const sigWidth = DEFAULT_SIG_WIDTH_DROP
       const sigHeight = sigWidth * (img.naturalHeight / img.naturalWidth)
       onAddElement({
-        id: `sig-${Date.now()}`,
+        id: crypto.randomUUID(),
         type: 'signature',
         x: Math.max(0, Math.min(1 - sigWidth, cursorX - sigWidth / 2)),
         y: Math.max(0, cursorY - sigHeight / 2),
@@ -222,8 +221,9 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
       onSignatureImageSet(dataUrl)
       placeImageOnPage(dataUrl, pageNumber, cursorX, cursorY)
     }
+    reader.onerror = () => alert(t('error.readFile'))
     reader.readAsDataURL(file)
-  }, [pageWidth, placeImageOnPage, onSignatureImageSet])
+  }, [pageWidth, placeImageOnPage, onSignatureImageSet, t])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -232,7 +232,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
 
   const handleDrawingComplete = useCallback((pageNumber: number, dataUrl: string, x: number, y: number, w: number, h: number) => {
     onAddElement({
-      id: `draw-${Date.now()}`,
+      id: crypto.randomUUID(),
       type: 'drawing',
       x, y,
       width: w,
@@ -254,14 +254,24 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
         }
       >
         {Array.from({ length: numPages }, (_, i) => (
+          <div key={i}>
+          {i > 0 && (
+            <div className="flex items-center gap-3 py-3 select-none" style={{ width: pageWidth, margin: '0 auto' }}>
+              <div className="flex-1 h-px bg-gray-300" />
+              <span className="text-xs text-gray-400">Page {i + 1}</span>
+              <div className="flex-1 h-px bg-gray-300" />
+            </div>
+          )}
           <div
-            key={i}
             data-page={i + 1}
-            className="relative mb-6 shadow-lg bg-white"
+            className="relative mb-10 shadow-lg bg-white"
             style={{ width: pageWidth, margin: '0 auto' }}
             onDrop={(e) => handlePageDrop(e, i + 1)}
             onDragOver={handleDragOver}
           >
+            <div className="absolute -top-5 left-0 text-[10px] text-gray-400 select-none">
+              {i + 1} / {numPages}
+            </div>
             <Page
               pageNumber={i + 1}
               width={pageWidth}
@@ -279,7 +289,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
                     onClick={() => {
                       if (!signatureImage) return
                       onAddElement({
-                        id: `sig-${Date.now()}`,
+                        id: crypto.randomUUID(),
                         type: 'signature',
                         x: sp.x,
                         y: sp.y,
@@ -317,6 +327,9 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
                   onUpdate={(updates) => onUpdateElement(el.id, updates)}
                   onDelete={() => onRemoveElement(el.id)}
                   onCopy={onCopy}
+                  isSelected={selectedElementId === el.id}
+                  onSelect={() => onSelectElement(el.id)}
+                  onDeselect={() => onSelectElement(null)}
                   showOutline={showOutlines}
                 />
               ))
@@ -330,6 +343,7 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
                 onCancel={onDrawingModeOff}
               />
             )}
+          </div>
           </div>
         ))}
       </Document>

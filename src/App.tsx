@@ -5,6 +5,8 @@ import { SignaturePanel } from './components/SignaturePanel'
 import { ExportButton } from './components/ExportButton'
 import { useLanguage } from './i18n'
 import { analyzePdfForSignature, type SignaturePlacement } from './utils/pdfAnalysis'
+import { safeGet, safeSet } from './utils/storage'
+import { DEFAULT_TEXT_COLOR } from './utils/constants'
 
 export interface SignatureElement {
   id: string
@@ -26,19 +28,22 @@ function App() {
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null)
   const [signatureImage, setSignatureImage] = useState<string | null>(
-    () => localStorage.getItem('autosign_signature_image')
+    () => safeGet('autosign_signature_image')
   )
+  const [sigRatio, setSigRatio] = useState(0.4)
   const [elements, setElements] = useState<SignatureElement[]>([])
-  const [, setNumPages] = useState(0)
   const [visiblePage, setVisiblePage] = useState(1)
+  const visiblePageRef = useRef(visiblePage)
+  visiblePageRef.current = visiblePage
   const [pageWidth, setPageWidth] = useState(612)
   const [showOutlines, setShowOutlines] = useState(false)
   const [suggestedPlacements, setSuggestedPlacements] = useState<SignaturePlacement[]>([])
   const [zoom, setZoom] = useState(1)
   const [drawingMode, setDrawingMode] = useState(false)
-  const [penColor, setPenColor] = useState('#1f2937')
+  const [penColor, setPenColor] = useState(DEFAULT_TEXT_COLOR)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [copiedElement, setCopiedElement] = useState<SignatureElement | null>(null)
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const pasteSourceRef = useRef<SignatureElement | null>(null)
   const lastPastedIdRef = useRef<string | null>(null)
   const elementsRef = useRef(elements)
@@ -47,6 +52,16 @@ function App() {
     pasteSourceRef.current = copiedElement
     lastPastedIdRef.current = null
   }, [copiedElement])
+
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-draggable]')) {
+        setSelectedElementId(null)
+      }
+    }
+    window.addEventListener('mousedown', handleMouseDown)
+    return () => window.removeEventListener('mousedown', handleMouseDown)
+  }, [])
 
   const handleDrawingModeOff = useCallback(() => setDrawingMode(false), [])
 
@@ -61,6 +76,14 @@ function App() {
     analyzePdfForSignature(pdfData).then(setSuggestedPlacements)
   }, [pdfData])
 
+  // Compute signature image aspect ratio (height/width) — used for placement sizing.
+  useEffect(() => {
+    if (!signatureImage) return
+    const img = new Image()
+    img.onload = () => setSigRatio(img.naturalHeight / img.naturalWidth)
+    img.src = signatureImage
+  }, [signatureImage])
+
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
@@ -73,14 +96,9 @@ function App() {
 
   const addElement = useCallback((element: SignatureElement) => {
     setElements(prev => [...prev, element])
-    setVisiblePage(current => {
-      if (current !== element.page) {
-        requestAnimationFrame(() => {
-          document.querySelector(`[data-page="${element.page}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        })
-      }
-      return current
-    })
+    if (visiblePageRef.current !== element.page) {
+      document.querySelector(`[data-page="${element.page}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
   }, [])
 
   useEffect(() => {
@@ -94,15 +112,15 @@ function App() {
         : pasteSourceRef.current
       const newX = Math.min(0.9, lastPasted.x + 0.02)
       const newY = Math.min(0.9, lastPasted.y + 0.02)
-      const id = `${lastPasted.type}-${Date.now()}`
+      const id = crypto.randomUUID()
       const pasted = { ...lastPasted, id, x: newX, y: newY }
       lastPastedIdRef.current = id
       pasteSourceRef.current = pasted
-      addElement(pasted)
+      setElements(prev => [...prev, pasted])
     }
     window.addEventListener('keydown', handlePaste)
     return () => window.removeEventListener('keydown', handlePaste)
-  }, [copiedElement, addElement])
+  }, [copiedElement])
 
   const handlePdfDrop = useCallback((file: File) => {
     setPdfFile(file)
@@ -112,12 +130,13 @@ function App() {
       const result = e.target?.result as ArrayBuffer
       setPdfData(new Uint8Array(result))
     }
+    reader.onerror = () => alert(t('error.readFile'))
     reader.readAsArrayBuffer(file)
-  }, [])
+  }, [t])
 
   const handleSignatureDrop = useCallback((dataUrl: string) => {
     setSignatureImage(dataUrl)
-    localStorage.setItem('autosign_signature_image', dataUrl)
+    safeSet('autosign_signature_image', dataUrl)
   }, [])
 
   const updateElement = useCallback((id: string, updates: Partial<SignatureElement>) => {
@@ -133,7 +152,6 @@ function App() {
     setPdfData(null)
     setSignatureImage(null)
     setElements([])
-    setNumPages(0)
   }, [])
 
   // Language toggle pill (reused in both views)
@@ -192,56 +210,66 @@ function App() {
             {t('app.newPdf')}
           </button>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Sidebar toggle on small screens */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Sidebar toggle — mobile only */}
           <button
             onClick={() => setSidebarOpen(o => !o)}
             className="sm:hidden px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer"
           >
             ☰
           </button>
-          <button
-            onClick={() => setDrawingMode(d => !d)}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm border rounded-lg transition-colors cursor-pointer ${
-              drawingMode
-                ? 'border-blue-500 text-blue-600 bg-blue-50'
-                : 'border-gray-300 text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-            }`}
-          >
-            {t('app.draw')}
-          </button>
-          <input
-            type="color"
-            value={penColor}
-            onChange={(e) => setPenColor(e.target.value)}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded cursor-pointer border border-gray-300"
-            title="Color"
-          />
-          <button
-            onClick={() => setShowOutlines(o => !o)}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm border rounded-lg transition-colors cursor-pointer ${
-              showOutlines
-                ? 'border-blue-500 text-blue-600 bg-blue-50'
-                : 'border-gray-300 text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-            }`}
-          >
-            {t('app.outlines')}
-          </button>
-          <div className="flex items-center gap-1 border border-gray-300 rounded-lg overflow-hidden">
+
+          {/* Drawing tools */}
+          <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2 py-1">
+            <button
+              onClick={() => setDrawingMode(d => !d)}
+              className={`px-2.5 py-1 text-xs sm:text-sm rounded transition-colors cursor-pointer ${
+                drawingMode
+                  ? 'bg-blue-100 text-blue-600 font-medium'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              {t('app.draw')}
+            </button>
+            <div className="w-px h-4 bg-gray-200" />
+            <input
+              type="color"
+              value={penColor}
+              onChange={(e) => setPenColor(e.target.value)}
+              className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
+              title="Color"
+            />
+          </div>
+
+          {/* View options */}
+          <div className="flex items-center gap-1 border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowOutlines(o => !o)}
+              className={`px-2.5 py-1.5 text-xs sm:text-sm transition-colors cursor-pointer ${
+                showOutlines
+                  ? 'bg-blue-100 text-blue-600 font-medium'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              {t('app.outlines')}
+            </button>
+            <div className="w-px h-4 bg-gray-200" />
             <button
               onClick={() => setZoom(z => Math.max(0.5, z - 0.25))}
-              className="px-2 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+              className="px-2 py-1.5 text-xs sm:text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
             >
-              -
+              −
             </button>
-            <span className="text-xs text-gray-500 w-9 sm:w-10 text-center">{Math.round(zoom * 100)}%</span>
+            <span className="text-xs text-gray-500 w-9 sm:w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
             <button
               onClick={() => setZoom(z => Math.min(2, z + 0.25))}
-              className="px-2 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+              className="px-2 py-1.5 text-xs sm:text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
             >
               +
             </button>
           </div>
+
+          {/* Actions */}
           <ExportButton pdfData={pdfData} elements={elements} fileName={pdfFile?.name || 'signed.pdf'} displayPageWidth={pageWidth} />
           {langToggle}
         </div>
@@ -253,6 +281,7 @@ function App() {
           <div className="p-4 min-w-64 sm:min-w-72">
             <SignaturePanel
               signatureImage={signatureImage}
+              sigRatio={sigRatio}
               onSignatureDrop={handleSignatureDrop}
               onAddElement={addElement}
               elements={elements}
@@ -273,7 +302,6 @@ function App() {
             elements={elements}
             onUpdateElement={updateElement}
             onRemoveElement={removeElement}
-            onNumPages={setNumPages}
             onVisiblePageChange={setVisiblePage}
             onAddElement={addElement}
             onSignatureImageSet={handleSignatureDrop}
@@ -281,11 +309,14 @@ function App() {
             showOutlines={showOutlines}
             suggestedPlacements={filteredPlacements}
             signatureImage={signatureImage}
+            sigRatio={sigRatio}
             zoom={zoom}
             drawingMode={drawingMode}
             penColor={penColor}
             onDrawingModeOff={handleDrawingModeOff}
             onCopy={setCopiedElement}
+            selectedElementId={selectedElementId}
+            onSelectElement={setSelectedElementId}
           />
         </main>
       </div>
