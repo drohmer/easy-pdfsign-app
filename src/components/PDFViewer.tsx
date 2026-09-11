@@ -239,8 +239,13 @@ export const PDFViewer = memo(function PDFViewer({ pdfData, elements, onUpdateEl
       height: h,
       content: dataUrl,
       page: pageNumber,
+      // The stroke is already baked into the PNG with this colour, but the
+      // preview recolours via a CSS mask and the export only recolours when
+      // `color` is set — without it the two disagree and the pen colour is
+      // ignored on screen.
+      color: penColor,
     })
-  }, [onAddElement])
+  }, [onAddElement, penColor])
 
   return (
     <div ref={containerRef} className={`flex flex-col gap-6 ${!drawingMode && zoom > 1 ? 'cursor-grab' : ''}`}>

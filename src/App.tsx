@@ -62,7 +62,9 @@ function App() {
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('[data-draggable]')) {
+      const target = e.target as HTMLElement
+      // Toolbar controls that act on the selection must not clear it first.
+      if (!target.closest('[data-draggable]') && !target.closest('[data-keep-selection]')) {
         setSelectedElementId(null)
       }
     }
@@ -168,6 +170,20 @@ function App() {
     setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el))
   }, [])
 
+  // The header swatch does double duty: it recolours the selected element when
+  // there is one, and otherwise sets the colour future elements are created with.
+  // Signatures keep their own image colours, so they are left alone.
+  const selectedElement = useMemo(
+    () => elements.find(e => e.id === selectedElementId) ?? null,
+    [elements, selectedElementId],
+  )
+  const colorTarget = selectedElement && selectedElement.type !== 'signature' ? selectedElement : null
+
+  const handleColorChange = useCallback((color: string) => {
+    setPenColor(color)
+    if (colorTarget) updateElement(colorTarget.id, { color })
+  }, [colorTarget, updateElement])
+
   const removeElement = useCallback((id: string) => {
     setElements(prev => prev.filter(el => el.id !== id))
   }, [])
@@ -259,10 +275,11 @@ function App() {
             <div className="w-px h-4 bg-gray-200" />
             <input
               type="color"
-              value={penColor}
-              onChange={(e) => setPenColor(e.target.value)}
+              data-keep-selection
+              value={colorTarget?.color ?? penColor}
+              onChange={(e) => handleColorChange(e.target.value)}
               className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
-              title="Color"
+              title={t(colorTarget ? 'color.selected' : 'color.new')}
             />
             <div className="w-px h-4 bg-gray-200" />
             <button
