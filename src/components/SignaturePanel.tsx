@@ -4,6 +4,7 @@ import type { SignaturePlacement } from '../utils/pdfAnalysis'
 import { useLanguage } from '../i18n'
 import type { TranslationKey } from '../i18n/translations'
 import { safeGet, safeSet } from '../utils/storage'
+import { getVisibleY } from '../utils/viewport'
 import {
   DEFAULT_SIG_WIDTH_NO_DETECTION,
   FALLBACK_SIG_X,
@@ -123,18 +124,6 @@ export function SignaturePanel({
     })
   }, [signatureImage, hasDetection, visiblePage, onAddElement, suggestedPlacement, sigRatio])
 
-  const getVisibleY = useCallback(() => {
-    const scrollContainer = document.querySelector('main')
-    const pageEl = document.querySelector(`[data-page="${visiblePage}"]`)
-    if (!scrollContainer || !pageEl) return 0.45
-    const scrollRect = scrollContainer.getBoundingClientRect()
-    const pageRect = pageEl.getBoundingClientRect()
-    const viewportCenterY = scrollRect.top + scrollRect.height / 2
-    const rawY = (viewportCenterY - pageRect.top) / pageRect.width
-    const maxY = (pageRect.height / pageRect.width) * 0.9
-    return Math.max(0.05, Math.min(maxY, rawY))
-  }, [visiblePage])
-
   // Build a text-like element (date / name / location / text / check / cross).
   // Position defaults to the visible area of the current page; color follows the pen.
   const createTextElement = useCallback(
@@ -142,14 +131,14 @@ export function SignaturePanel({
       id: crypto.randomUUID(),
       type,
       x: TEXT_FIELD_X,
-      y: getVisibleY(),
+      y: getVisibleY(visiblePage),
       width,
       height: 0.025,
       content,
       page: visiblePage,
       color: penColor,
     }),
-    [getVisibleY, visiblePage, penColor],
+    [visiblePage, penColor],
   )
 
   const addDate = useCallback(() => {
@@ -284,6 +273,7 @@ export function SignaturePanel({
                 <span className="truncate mr-2">
                   {el.type === 'signature' ? t('signature.label')
                     : el.type === 'drawing' ? t('drawing.label')
+                    : el.type === 'rect' ? t('rect.label')
                     : el.content + ' p.'}
                   {el.page}
                 </span>

@@ -11,3 +11,8 @@ export const FALLBACK_SIG_Y = 0.82
 
 // Default x offset for added text fields (date, name, location, text, checkbox)
 export const TEXT_FIELD_X = 0.1
+
+// Default rectangle (mask / highlight) — fractions of page width
+export const DEFAULT_RECT_COLOR = '#ffffff'
+export const DEFAULT_RECT_WIDTH = 0.3
+export const DEFAULT_RECT_HEIGHT = 0.03

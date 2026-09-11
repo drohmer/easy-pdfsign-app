@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useState, memo } from 'react'
 import type { SignatureElement } from '../App'
-import { DEFAULT_TEXT_COLOR } from '../utils/constants'
+import { DEFAULT_RECT_COLOR, DEFAULT_TEXT_COLOR } from '../utils/constants'
 
 interface Props {
   element: SignatureElement
@@ -63,7 +63,10 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     return () => window.removeEventListener('keydown', handleKey)
   }, [isSelected])
 
-  const isText = element.type !== 'signature' && element.type !== 'drawing'
+  const isRect = element.type === 'rect'
+  // "Box" elements carry an explicit width/height and get a resize handle;
+  // text elements are sized by their content instead.
+  const isText = element.type !== 'signature' && element.type !== 'drawing' && !isRect
   const fontSize = element.fontSize ?? DEFAULT_FONT_SIZE
 
   const pixelX = element.x * containerWidth
@@ -74,12 +77,12 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
   const isCheckbox = element.type === 'check' || element.type === 'cross'
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    if (element.type === 'signature' || element.type === 'drawing' || isCheckbox) return
+    if (element.type === 'signature' || element.type === 'drawing' || isCheckbox || isRect) return
     e.preventDefault()
     e.stopPropagation()
     setEditText(element.content)
     setIsEditing(true)
-  }, [element.type, element.content, isCheckbox])
+  }, [element.type, element.content, isCheckbox, isRect])
 
   // Focus the input when entering edit mode (after React commits the input to the DOM)
   useEffect(() => {
@@ -187,32 +190,32 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
     }
 
     const cw = containerWidth
+    // A mask rectangle may legitimately be tiny (covering a single character),
+    // whereas an image needs enough room to stay recognisable.
+    const minW = isRect ? 8 : 40
+    const minH = isRect ? 8 : 20
+
+    const sizeFor = (ev: MouseEvent) => ({
+      w: Math.max(minW, resizeStart.current.w + ev.clientX - resizeStart.current.x),
+      h: Math.max(minH, resizeStart.current.h + ev.clientY - resizeStart.current.y),
+    })
 
     const handleMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - resizeStart.current.x
-      const dy = ev.clientY - resizeStart.current.y
-      const newW = Math.max(40, resizeStart.current.w + dx)
-      const newH = Math.max(20, resizeStart.current.h + dy)
-      el.style.width = `${newW}px`
-      el.style.height = `${newH}px`
+      const { w, h } = sizeFor(ev)
+      el.style.width = `${w}px`
+      el.style.height = `${h}px`
     }
 
     const handleUp = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
-      const dx = ev.clientX - resizeStart.current.x
-      const dy = ev.clientY - resizeStart.current.y
-      const newW = Math.max(40, resizeStart.current.w + dx)
-      const newH = Math.max(20, resizeStart.current.h + dy)
-      onUpdateRef.current({
-        width: newW / cw,
-        height: newH / cw,
-      })
+      const { w, h } = sizeFor(ev)
+      onUpdateRef.current({ width: w / cw, height: h / cw })
     }
 
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
-  }, [containerWidth])
+  }, [containerWidth, isRect])
 
   // Sync DOM with React state when not dragging
   useEffect(() => {
@@ -232,6 +235,9 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
   }, [fontSize])
 
   const renderContent = () => {
+    // The rectangle is painted as the root element's background so that the fill
+    // covers the exact box the export draws (background-clip defaults to border-box).
+    if (isRect) return null
     if (element.type === 'signature') {
       return (
         <img
@@ -287,8 +293,9 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
   }
 
   const isImage = element.type === 'signature' || element.type === 'drawing'
-  const hoverBorder = isImage ? 'hover:border-blue-400' : 'hover:border-green-400'
-  const activeBorder = isImage ? 'border-blue-400' : 'border-green-400'
+  // Written out in full: Tailwind only sees class names that appear literally in the source.
+  const hoverBorder = isRect ? 'hover:border-purple-400' : isImage ? 'hover:border-blue-400' : 'hover:border-green-400'
+  const activeBorder = isRect ? 'border-purple-400' : isImage ? 'border-blue-400' : 'border-green-400'
 
   const borderClass = (isSelected || showOutline)
     ? activeBorder
@@ -300,15 +307,16 @@ export const DraggableElement = memo(function DraggableElement({ element, contai
       data-draggable
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
-      className={`absolute border-2 ${borderClass} ${hoverBorder} ${isEditing ? 'cursor-text' : 'cursor-move'} group hover:shadow-md transition-[border-color,box-shadow] rounded`}
+      className={`absolute border-2 ${borderClass} ${hoverBorder} ${isEditing ? 'cursor-text' : 'cursor-move'} group hover:shadow-md transition-[border-color,box-shadow] ${isRect ? '' : 'rounded'}`}
       style={{
         left: pixelX,
         top: pixelY,
         ...(isText ? {} : { width: pixelW, height: pixelH }),
+        ...(isRect ? { backgroundColor: element.color || DEFAULT_RECT_COLOR } : {}),
       }}
     >
       {renderContent()}
-      {/* Resize handle for signatures */}
+      {/* Resize handle — box elements only (signature, drawing, rectangle) */}
       {!isText && (
         <div
           data-resize="true"

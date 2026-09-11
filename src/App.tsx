@@ -6,11 +6,18 @@ import { ExportButton } from './components/ExportButton'
 import { useLanguage } from './i18n'
 import { analyzePdfForSignature, type SignaturePlacement } from './utils/pdfAnalysis'
 import { safeGet, safeSet } from './utils/storage'
-import { DEFAULT_TEXT_COLOR } from './utils/constants'
+import { getVisibleY } from './utils/viewport'
+import {
+  DEFAULT_RECT_COLOR,
+  DEFAULT_RECT_HEIGHT,
+  DEFAULT_RECT_WIDTH,
+  DEFAULT_TEXT_COLOR,
+  TEXT_FIELD_X,
+} from './utils/constants'
 
 export interface SignatureElement {
   id: string
-  type: 'signature' | 'drawing' | 'name' | 'date' | 'location' | 'text' | 'check' | 'cross'
+  type: 'signature' | 'drawing' | 'name' | 'date' | 'location' | 'text' | 'check' | 'cross' | 'rect'
   x: number
   y: number
   width: number
@@ -100,6 +107,24 @@ function App() {
       document.querySelector(`[data-page="${element.page}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   }, [])
+
+  // A rectangle is a box, not a text run: it carries its own width/height and
+  // lands in the middle of the visible area, ready to be dragged onto its target.
+  // It defaults to white (the "mask something out" case); the colour is then
+  // editable per-element from the swatch that appears on hover.
+  const addRect = useCallback(() => {
+    addElement({
+      id: crypto.randomUUID(),
+      type: 'rect',
+      x: TEXT_FIELD_X,
+      y: getVisibleY(visiblePageRef.current),
+      width: DEFAULT_RECT_WIDTH,
+      height: DEFAULT_RECT_HEIGHT,
+      content: '',
+      page: visiblePageRef.current,
+      color: DEFAULT_RECT_COLOR,
+    })
+  }, [addElement])
 
   useEffect(() => {
     if (!copiedElement) return
@@ -239,6 +264,15 @@ function App() {
               className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0"
               title="Color"
             />
+            <div className="w-px h-4 bg-gray-200" />
+            <button
+              onClick={addRect}
+              title={t('rect.hint')}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs sm:text-sm rounded transition-colors cursor-pointer text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+            >
+              <span className="w-3 h-3 shrink-0 bg-white border border-gray-400 inline-block" />
+              {t('rect.title')}
+            </button>
           </div>
 
           {/* View options */}

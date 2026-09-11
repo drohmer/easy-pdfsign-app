@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib'
 import { pdfjs } from 'react-pdf'
 import type { SignatureElement } from '../App'
 import { useLanguage } from '../i18n'
-import { DEFAULT_TEXT_COLOR } from '../utils/constants'
+import { DEFAULT_RECT_COLOR, DEFAULT_TEXT_COLOR } from '../utils/constants'
 
 interface Props {
   pdfData: Uint8Array
@@ -66,7 +66,10 @@ export function ExportButton({ pdfData, elements, fileName, displayPageWidth }: 
           const w = el.width * cw
           const h = el.height * cw
 
-          if (el.type === 'signature' || el.type === 'drawing') {
+          if (el.type === 'rect') {
+            ctx.fillStyle = el.color || DEFAULT_RECT_COLOR
+            ctx.fillRect(x, y, w, h)
+          } else if (el.type === 'signature' || el.type === 'drawing') {
             const img = await loadImage(el.content)
             // Preserve aspect ratio like CSS object-contain
             const imgRatio = img.naturalWidth / img.naturalHeight
